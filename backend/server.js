@@ -54,17 +54,32 @@ const upload = multer({
 });
 
 // Database Connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/fileshare')
+const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/fileshare';
+console.log(`📡 Attempting to connect to MongoDB...`);
+if (mongoUri.includes('localhost')) {
+    console.warn('⚠️ Warning: Connecting to local MongoDB. This will FAIL on cloud deployments like Vercel/Render.');
+}
+
+mongoose.connect(mongoUri)
     .then(() => console.log('✅ MongoDB connected successfully'))
     .catch(err => {
         console.error('❌ MongoDB connection error:', err.message);
-        process.exit(1); // Exit if DB connection fails
+        // We don't exit in serverless/Vercel to allow the function to potentially retry or show a valid error
+        if (!process.env.VERCEL) {
+            process.exit(1);
+        }
     });
 
 // Middleware to check DB connection
 app.use((req, res, next) => {
-    if (mongoose.connection.readyState !== 1) {
-        return res.status(503).json({ error: 'Database not ready. Please try again in a moment.' });
+    const state = mongoose.connection.readyState;
+    if (state !== 1) {
+        const states = { 0: 'disconnected', 1: 'connected', 2: 'connecting', 3: 'disconnecting' };
+        return res.status(503).json({ 
+            error: 'Database not ready.', 
+            currentState: states[state] || 'unknown',
+            message: 'If this persists, please ensure your MONGODB_URI is correctly set in your deployment environment and your IP is whitelisted on MongoDB Atlas.'
+        });
     }
     next();
 });
