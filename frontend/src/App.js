@@ -82,7 +82,7 @@ function App() {
     const file = e.target.files[0];
     if (file) {
       if (file.size > 500 * 1024 * 1024) {
-        setError('File too large (Max 500MB)');
+        setError('File too large (Max 5MB)');
         return;
       }
       setSelectedFile(file);

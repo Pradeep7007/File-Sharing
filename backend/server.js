@@ -230,9 +230,10 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-if (process.env.NODE_ENV !== 'production') {
+// We only skip app.listen if we are strictly on Vercel's serverless platform
+if (!process.env.VERCEL) {
     app.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
+        console.log(`✅ Server is live and listening on port ${PORT}`);
     });
 }
 
