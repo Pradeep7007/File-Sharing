@@ -15,10 +15,14 @@ app.use(express.json());
 
 // Create uploads directory if it doesn't exist
 const uploadDir = path.resolve(__dirname, process.env.UPLOAD_DIR || 'uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
+try {
+    if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    console.log('✅ Uploads directory (Absolute):', uploadDir);
+} catch (err) {
+    console.warn('⚠️ Could not create uploads directory (Read-only environment):', err.message);
 }
-console.log('✅ Uploads directory (Absolute):', uploadDir);
 
 // Multer Config
 const storage = multer.diskStorage({
@@ -214,6 +218,10 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}
+
+module.exports = app;
