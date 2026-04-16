@@ -217,6 +217,39 @@ app.get('/api/files', async (req, res) => {
     }
 });
 
+// 5. Delete File
+app.delete('/api/files/:fileId', async (req, res) => {
+    try {
+        const { deletePassword } = req.body;
+        
+        // Security Check: Hardcoded Global Delete Password
+        if (deletePassword !== '123@#') {
+            return res.status(403).json({ error: 'Incorrect delete password' });
+        }
+
+        const file = await File.findOne({ fileId: req.params.fileId });
+        if (!file) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+
+        // 1. Delete physical file
+        const filePath = path.join(uploadDir, file.storedFilename);
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+
+        // 2. Delete DB record
+        await File.deleteOne({ fileId: req.params.fileId });
+
+        console.log(`✅ File deleted: ${req.params.fileId}`);
+        res.json({ success: true, message: 'File deleted successfully' });
+
+    } catch (error) {
+        console.error('Delete Error:', error);
+        res.status(500).json({ error: 'Failed to delete file', details: error.message });
+    }
+});
+
 // Global Error Handler
 app.use((err, req, res, next) => {
     if (err instanceof multer.MulterError) {

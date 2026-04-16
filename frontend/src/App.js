@@ -155,6 +155,38 @@ function App() {
     setTimeout(() => setIsDownloading(false), 2000);
   };
 
+  const deleteFile = async (e, id) => {
+    e.stopPropagation(); // Prevent triggering the card click (which goes to download page)
+    
+    const pass = window.prompt('Enter ADMIN password to delete this file:');
+    if (!pass) return;
+
+    if (pass !== '123@#') {
+      alert('Incorrect password!');
+      return;
+    }
+
+    if (!window.confirm('Are you sure you want to permanently delete this file?')) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/api/files/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deletePassword: pass })
+      });
+
+      if (res.ok) {
+        alert('File deleted successfully');
+        fetchFiles(); // Refresh the list
+      } else {
+        const data = await res.json();
+        alert(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      alert('Network error trying to delete file');
+    }
+  };
+
   const copyToClipboard = () => {
     navigator.clipboard.writeText(uploadedLink);
     alert('Link copied to clipboard!');
@@ -274,6 +306,9 @@ function App() {
                   <div className="gallery-grid">
                     {filesList.map(f => (
                       <div key={f.fileId} className="file-card" onClick={() => window.location.href = `/?id=${f.fileId}`}>
+                        <button className="delete-btn" title="Delete File" onClick={(e) => deleteFile(e, f.fileId)}>
+                          🗑️
+                        </button>
                         <span className="card-icon">📄</span>
                         <div className="card-name">{f.filename}</div>
                         <div className="card-date">{new Date(f.uploadTime).toLocaleDateString()}</div>
