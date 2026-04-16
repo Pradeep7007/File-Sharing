@@ -14,14 +14,22 @@ app.use(cors());
 app.use(express.json());
 
 // Create uploads directory if it doesn't exist
-const uploadDir = path.resolve(__dirname, process.env.UPLOAD_DIR || 'uploads');
+// VERCEL HACK: Use /tmp if running on Vercel (read-only filesystem)
+const isVercel = process.env.VERCEL === '1' || !!process.env.VERCEL;
+const uploadDir = isVercel 
+    ? path.join('/tmp', 'uploads')
+    : path.resolve(__dirname, process.env.UPLOAD_DIR || 'uploads');
+
 try {
     if (!fs.existsSync(uploadDir)) {
         fs.mkdirSync(uploadDir, { recursive: true });
     }
-    console.log('✅ Uploads directory (Absolute):', uploadDir);
+    console.log(`✅ Uploads directory (${isVercel ? 'Vercel Temp' : 'Absolute'}):`, uploadDir);
+    if (isVercel) {
+        console.warn('⚠️ WARNING: Using ephemeral /tmp storage. Files WILL BE DELETED after execution.');
+    }
 } catch (err) {
-    console.warn('⚠️ Could not create uploads directory (Read-only environment):', err.message);
+    console.warn('⚠️ Could not create uploads directory:', err.message);
 }
 
 // Multer Config
