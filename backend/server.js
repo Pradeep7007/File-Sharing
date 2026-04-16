@@ -82,15 +82,30 @@ app.get('/debug-db', (req, res) => {
 // Middleware to check DB connection
 app.use((req, res, next) => {
     const state = mongoose.connection.readyState;
-    if (state !== 1) {
-        const states = { 0: 'disconnected', 1: 'connected', 2: 'connecting', 3: 'disconnecting' };
-        return res.status(503).json({ 
-            error: 'Database not ready.', 
-            currentState: states[state] || 'unknown',
-            message: 'If this persists, please ensure your MONGODB_URI is correctly set in your deployment environment and your IP is whitelisted on MongoDB Atlas.'
-        });
-    }
-    next();
+    const states = { 
+        0: 'disconnected', 
+        1: 'connected', 
+        2: 'connecting', 
+        3: 'disconnecting' 
+    };
+
+    // If connected, proceed
+    if (state === 1) return next();
+
+    // Log the issue for Vercel logs
+    console.error(`⚠️ DB Connection Check: Current state is "${states[state]}"`);
+
+    // Return a descriptive error
+    return res.status(503).json({ 
+        error: 'Database not ready.', 
+        currentState: states[state] || 'unknown',
+        message: 'The backend is running but cannot connect to MongoDB.',
+        troubleshooting: [
+            '1. Ensure MONGODB_URI is set in Vercel Environment Variables.',
+            '2. Ensure your IP (0.0.0.0/0) is whitelisted in MongoDB Atlas Network Access.',
+            '3. Check Vercel Logs for the specific connection error message.'
+        ]
+    });
 });
 
 // Utility: Hash Password
