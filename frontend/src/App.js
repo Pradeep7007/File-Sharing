@@ -43,12 +43,18 @@ function App() {
 
   const fetchFiles = async () => {
     setIsFilesLoading(true);
+    setError('');
     try {
       const res = await fetch(`${API_BASE}/api/files`);
-      const data = await res.json();
-      if (res.ok) setFilesList(data);
+      if (res.ok) {
+        const data = await res.json();
+        setFilesList(data);
+      } else {
+        setError('✅ Backend reachable, but failed to fetch the file list.');
+      }
     } catch (err) {
-      console.error('Failed to fetch files');
+      setError('🔌 Connection Error: Unable to reach the backend. Please check your REACT_APP_API_URL and ensure your backend service is running.');
+      console.error('API connection failed:', err);
     } finally {
       setIsFilesLoading(false);
     }

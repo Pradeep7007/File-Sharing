@@ -10,7 +10,11 @@ require('dotenv').config();
 const File = require('./models/File');
 
 const app = express();
-app.use(cors());
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Create uploads directory if it doesn't exist
