@@ -54,21 +54,30 @@ const upload = multer({
 });
 
 // Database Connection
-const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/fileshare';
-console.log(`📡 Attempting to connect to MongoDB...`);
-if (mongoUri.includes('localhost')) {
-    console.warn('⚠️ Warning: Connecting to local MongoDB. This will FAIL on cloud deployments like Vercel/Render.');
+const mongoUri = process.env.MONGODB_URI;
+if (!mongoUri) {
+    console.error('❌ CRITICAL: MONGODB_URI is not defined! Falling back to localhost (this will fail in production).');
 }
 
-mongoose.connect(mongoUri)
+console.log('📡 DB Status: Initializing connection...');
+
+mongoose.connect(mongoUri || 'mongodb://localhost:27017/fileshare')
     .then(() => console.log('✅ MongoDB connected successfully'))
     .catch(err => {
         console.error('❌ MongoDB connection error:', err.message);
-        // We don't exit in serverless/Vercel to allow the function to potentially retry or show a valid error
-        if (!process.env.VERCEL) {
-            process.exit(1);
-        }
+        if (!process.env.VERCEL) process.exit(1);
     });
+
+// Debug Endpoint (Temporary)
+app.get('/debug-db', (req, res) => {
+    res.json({
+        hasUri: !!process.env.MONGODB_URI,
+        uriPrefix: process.env.MONGODB_URI ? process.env.MONGODB_URI.split(':')[0] + '://' + (process.env.MONGODB_URI.split('@')[1] || '').split('.')[0] : 'none',
+        connectionState: mongoose.connection.readyState,
+        env: process.env.NODE_ENV || 'development',
+        isVercel: !!process.env.VERCEL
+    });
+});
 
 // Middleware to check DB connection
 app.use((req, res, next) => {
