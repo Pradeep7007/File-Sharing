@@ -6,7 +6,7 @@ const bcrypt = require('bcrypt');
 const path = require('path');
 const cors = require('cors');
 const fs = require('fs');
-const File = require('../models/File');
+const File = require('./models/File');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -28,7 +28,7 @@ const connectDB = async () => {
 };
 
 // Ensure uploads directory exists (use /tmp for serverless functions)
-const uploadDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, '../uploads');
+const uploadDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
