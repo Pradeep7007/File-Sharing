@@ -76,7 +76,12 @@ function App() {
       if (fileInputRef.current) fileInputRef.current.value = '';
       fetchFiles();
     } catch (error) {
-      alert(error.response?.data?.error || 'Upload failed');
+      const errorMsg = error.response?.data?.error || error.message;
+      if (errorMsg.includes('413') || error.message.includes('413')) {
+        alert('Upload Error: File is too large for the current server limit. (Vercel standard limit is 4.5MB).');
+      } else {
+        alert('Upload Failed: ' + errorMsg);
+      }
     } finally {
       setUploading(false);
     }
