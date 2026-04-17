@@ -18,7 +18,10 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import './App.css';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || window.location.origin;
+const API_BASE_URL = process.env.REACT_APP_API_URL || 
+  (window.location.hostname === 'localhost' ? 'http://localhost:5000' : window.location.origin);
+
+console.log('DropShare API Base:', API_BASE_URL);
 
 function App() {
   const [files, setFiles] = useState([]);
