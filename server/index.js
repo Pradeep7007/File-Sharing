@@ -21,6 +21,10 @@ app.use(express.urlencoded({ extended: true }));
 const connectDB = async () => {
     if (mongoose.connection.readyState >= 1) return;
     try {
+        if (!process.env.MONGO_URI) {
+            console.error('CRITICAL: MONGO_URI is not defined in environment variables');
+            return;
+        }
         await mongoose.connect(process.env.MONGO_URI);
         console.log('Connected to MongoDB Atlas');
     } catch (err) {
@@ -28,15 +32,16 @@ const connectDB = async () => {
     }
 };
 
-// TEST ROUTE
-app.get("/", (req, res) => {
-  res.send("DropShare API is working 🚀");
-});
-
 // Ensure uploads directory exists
-const uploadDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
+let uploadDir;
+try {
+    uploadDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+    }
+} catch (e) {
+    console.error('Failed to create upload directory, falling back to /tmp');
+    uploadDir = '/tmp';
 }
 
 // Multer Config
@@ -56,6 +61,9 @@ const upload = multer({
 }).single('file');
 
 // Routes
+app.get("/", (req, res) => {
+  res.send("DropShare API is working 🚀");
+});
 
 // 1. Upload File
 app.post('/upload', async (req, res) => {
@@ -74,19 +82,26 @@ app.post('/upload', async (req, res) => {
             const fileData = {
                 filename: req.file.filename,
                 originalName: req.file.originalname,
-                path: req.file.filename, // 🔥 STORE ONLY FILENAME TO REMAIN PORTABLE
+                path: req.file.filename,
                 password: hashedPassword || "none",
                 size: req.file.size,
                 type: req.file.mimetype
             };
 
             const file = await File.create(fileData);
+            
+            // Check if BASE_URL has protocol, if not add it
+            let baseUrl = process.env.BASE_URL || "";
+            if (baseUrl && !baseUrl.startsWith('http')) {
+                baseUrl = `https://${baseUrl}`;
+            }
+
             res.status(200).json({ 
                 message: 'File uploaded successfully',
                 file: {
                     id: file._id,
                     name: file.originalName,
-                    downloadLink: `${process.env.BASE_URL || ''}/download/${file._id}`
+                    downloadLink: `${baseUrl}/download/${file._id}`
                 }
             });
         } catch (error) {
@@ -100,13 +115,19 @@ app.get('/files', async (req, res) => {
     try {
         await connectDB();
         const files = await File.find().sort({ uploadDate: -1 });
+        
+        let baseUrl = process.env.BASE_URL || "";
+        if (baseUrl && !baseUrl.startsWith('http')) {
+            baseUrl = `https://${baseUrl}`;
+        }
+
         const fileList = files.map(file => ({
             id: file._id,
             name: file.originalName,
             size: file.size,
             uploadDate: file.uploadDate,
             downloadCount: file.downloadCount,
-            downloadLink: `${process.env.BASE_URL || ''}/download/${file._id}`,
+            downloadLink: `${baseUrl}/download/${file._id}`,
             hasPassword: file.password !== "none"
         }));
         res.status(200).json(fileList);
@@ -120,31 +141,19 @@ app.get('/download/:id', async (req, res) => {
     try {
         await connectDB();
         const file = await File.findById(req.params.id);
-        if (!file) return res.status(404).json({ error: 'File not found in DB' });
+        if (!file) return res.status(404).json({ error: 'File not found' });
 
-        // 🔥 RECONSTRUCT PATH DYNAMICALLY
         const fullPath = path.join(uploadDir, file.filename);
-
         if (!fs.existsSync(fullPath)) {
-            console.error('File missing at:', fullPath);
-            return res.status(404).json({ error: 'File not found on storage server' });
+            return res.status(404).json({ error: 'File not found on storage' });
         }
 
         file.downloadCount++;
         await file.save();
 
-        // Ensure headers are set correctly for download
         res.setHeader('Content-Type', file.type || 'application/octet-stream');
         res.setHeader('Content-Disposition', `attachment; filename="${file.originalName}"`);
-        
-        res.download(fullPath, file.originalName, (err) => {
-            if (err) {
-                console.error('Download prompt error:', err);
-                if (!res.headersSent) {
-                    res.status(500).json({ error: 'Failed to initiate download' });
-                }
-            }
-        });
+        res.download(fullPath, file.originalName);
     } catch (error) {
         res.status(500).json({ error: 'Download error: ' + error.message });
     }
@@ -175,9 +184,6 @@ app.delete('/delete/:id', async (req, res) => {
 module.exports = app;
 module.exports.handler = serverless(app);
 
-// Local server
 if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => {
-        console.log(`Server running local on port ${PORT}`);
-    });
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
