@@ -39,6 +39,8 @@ try {
     if (!fs.existsSync(uploadDir)) {
         fs.mkdirSync(uploadDir, { recursive: true });
     }
+    console.log(`Server environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Upload storage path: ${uploadDir}`);
 } catch (e) {
     console.error('Failed to create upload directory, falling back to /tmp');
     uploadDir = '/tmp';
@@ -145,10 +147,19 @@ app.get('/download/:id', async (req, res) => {
             return res.status(404).json({ error: 'File not found in database' });
         }
 
-        const fullPath = path.join(uploadDir, file.filename);
+        const fullPath = path.resolve(uploadDir, file.filename);
         if (!fs.existsSync(fullPath)) {
-            console.error(`File missing at path: ${fullPath}`);
-            return res.status(404).json({ error: 'File physical record not found on server' });
+            const filesInDir = fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir) : ["Directory Missing"];
+            console.error(`Download Failed. Checked path: ${fullPath}`);
+            console.error(`Files available in uploads: ${filesInDir.length}`);
+            
+            return res.status(404).json({ 
+                error: 'File physical record not found on server',
+                details: process.env.NODE_ENV !== 'production' ? {
+                    checkedPath: fullPath,
+                    filesInDirectory: filesInDir
+                } : undefined
+            });
         }
 
         file.downloadCount++;
