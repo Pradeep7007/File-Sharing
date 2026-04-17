@@ -141,21 +141,31 @@ app.get('/download/:id', async (req, res) => {
     try {
         await connectDB();
         const file = await File.findById(req.params.id);
-        if (!file) return res.status(404).json({ error: 'File not found' });
+        if (!file) {
+            return res.status(404).json({ error: 'File not found in database' });
+        }
 
         const fullPath = path.join(uploadDir, file.filename);
         if (!fs.existsSync(fullPath)) {
-            return res.status(404).json({ error: 'File not found on storage' });
+            console.error(`File missing at path: ${fullPath}`);
+            return res.status(404).json({ error: 'File physical record not found on server' });
         }
 
         file.downloadCount++;
         await file.save();
 
-        res.setHeader('Content-Type', file.type || 'application/octet-stream');
-        res.setHeader('Content-Disposition', `attachment; filename="${file.originalName}"`);
-        res.download(fullPath, file.originalName);
+        // res.download handles Content-Type and Content-Disposition automatically
+        res.download(fullPath, file.originalName, (err) => {
+            if (err) {
+                if (!res.headersSent) {
+                    res.status(500).json({ error: 'Failed to stream the file' });
+                }
+                console.error('Download error:', err);
+            }
+        });
     } catch (error) {
-        res.status(500).json({ error: 'Download error: ' + error.message });
+        console.error('Download route catch error:', error);
+        res.status(500).json({ error: 'Download logic failed: ' + error.message });
     }
 });
 

@@ -253,9 +253,11 @@ function App() {
                       {copySuccess === file.id ? <Check size={18} color="var(--success)" /> : <Copy size={18} />}
                     </button>
                     <a 
-                      href={file.downloadLink} 
+                      href={file.downloadLink.startsWith('http') ? file.downloadLink : `${API_BASE_URL}${file.downloadLink}`} 
                       className="action-btn" 
                       title="Download"
+                      target="_blank"
+                      rel="noopener noreferrer"
                     >
                       <Download size={18} />
                     </a>
