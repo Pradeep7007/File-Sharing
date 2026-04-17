@@ -6,7 +6,7 @@ const bcrypt = require('bcrypt');
 const path = require('path');
 const cors = require('cors');
 const fs = require('fs');
-const File = require('./models/File');
+const File = require('../models/File');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -16,16 +16,27 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Ensure uploads directory exists
-const uploadDir = path.join(__dirname, 'uploads');
+// Database Connection (using a single connection if it exists)
+const connectDB = async () => {
+    if (mongoose.connection.readyState >= 1) return;
+    try {
+        await mongoose.connect(process.env.MONGO_URI);
+        console.log('Connected to MongoDB Atlas');
+    } catch (err) {
+        console.error('MongoDB connection error:', err);
+    }
+};
+
+// Ensure uploads directory exists (use /tmp for serverless functions)
+const uploadDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir);
+    fs.mkdirSync(uploadDir, { recursive: true });
 }
 
 // Multer Config
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, 'uploads');
+        cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -38,18 +49,14 @@ const upload = multer({
     limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
 }).single('file');
 
-// Database Connection
-mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('Connected to MongoDB Atlas'))
-    .catch(err => console.error('MongoDB connection error:', err));
-
 // Routes
 
 // 1. Upload File
-app.post('/upload', (req, res) => {
+app.post('/upload', async (req, res) => {
+    await connectDB();
     upload(req, res, async (err) => {
         if (err) {
-            return res.status(500).json({ error: err.message });
+            return res.status(500).json({ error: 'Upload error: ' + err.message });
         }
 
         if (!req.file) {
@@ -80,18 +87,19 @@ app.post('/upload', (req, res) => {
                 file: {
                     id: file._id,
                     name: file.originalName,
-                    downloadLink: `${process.env.BASE_URL}/download/${file._id}`
+                    downloadLink: `${process.env.BASE_URL || ''}/download/${file._id}`
                 }
             });
         } catch (error) {
-            res.status(500).json({ error: error.message });
+            res.status(500).json({ error: 'Database error: ' + error.message });
         }
     });
 });
 
-// 2. Get All Files (Metadata)
+// 2. Get All Files
 app.get('/files', async (req, res) => {
     try {
+        await connectDB();
         const files = await File.find().sort({ uploadDate: -1 });
         const fileList = files.map(file => ({
             id: file._id,
@@ -99,35 +107,40 @@ app.get('/files', async (req, res) => {
             size: file.size,
             uploadDate: file.uploadDate,
             downloadCount: file.downloadCount,
-            downloadLink: `${process.env.BASE_URL}/download/${file._id}`
+            downloadLink: `${process.env.BASE_URL || ''}/download/${file._id}`
         }));
         res.status(200).json(fileList);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Fetch error: ' + error.message });
     }
 });
 
 // 3. Download File
 app.get('/download/:id', async (req, res) => {
     try {
+        await connectDB();
         const file = await File.findById(req.params.id);
         if (!file) {
-            return res.status(404).json({ error: 'File not found' });
+            return res.status(404).json({ error: 'File not found in database' });
         }
 
-        // Increment download count
+        if (!fs.existsSync(file.path)) {
+            return res.status(404).json({ error: 'File not found on server storage' });
+        }
+
         file.downloadCount++;
         await file.save();
 
         res.download(file.path, file.originalName);
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Download error: ' + error.message });
     }
 });
 
 // 4. Delete File
 app.delete('/delete/:id', async (req, res) => {
     try {
+        await connectDB();
         const { password } = req.body;
         const file = await File.findById(req.params.id);
 
@@ -144,20 +157,24 @@ app.delete('/delete/:id', async (req, res) => {
             return res.status(401).json({ error: 'Incorrect password' });
         }
 
-        // Delete from local storage
         if (fs.existsSync(file.path)) {
             fs.unlinkSync(file.path);
         }
 
-        // Delete from database
         await File.findByIdAndDelete(req.params.id);
 
         res.status(200).json({ message: 'File deleted successfully' });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: 'Delete error: ' + error.message });
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+// Export the app for Vercel
+module.exports = app;
+
+// Local server
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`Server running local dev on port ${PORT}`);
+    });
+}
