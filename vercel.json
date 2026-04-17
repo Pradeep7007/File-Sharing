@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "server/index.js", "use": "@vercel/node" },
+    { "src": "client/package.json", "use": "@vercel/static-build" }
+  ],
+  "routes": [
+    { "src": "/upload", "dest": "server/index.js" },
+    { "src": "/files", "dest": "server/index.js" },
+    { "src": "/download/(.*)", "dest": "server/index.js" },
+    { "src": "/delete/(.*)", "dest": "server/index.js" },
+    { "src": "/", "dest": "server/index.js" },
+    { "src": "/(.*)", "dest": "client/$1" }
+  ]
+}

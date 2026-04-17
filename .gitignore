@@ -1,30 +1,9 @@
-# Node modules
 node_modules/
-
-# Environment variables
-.env
-
-# Logs
-*.log
-
-# Build folders
-dist/
-build/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-
-node_modules/
-backend/node_modules/
-frontend/node_modules/
+server/node_modules/
+client/node_modules/
 
 .env
-backend/.env
-frontend/.env
+server/.env
+client/.env
 
 uploads/

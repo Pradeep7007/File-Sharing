@@ -6,6 +6,7 @@ const bcrypt = require('bcrypt');
 const path = require('path');
 const cors = require('cors');
 const fs = require('fs');
+const serverless = require('serverless-http');
 const File = require('./models/File');
 
 const app = express();
@@ -16,7 +17,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Database Connection (using a single connection if it exists)
+// Database Connection
 const connectDB = async () => {
     if (mongoose.connection.readyState >= 1) return;
     try {
@@ -27,7 +28,12 @@ const connectDB = async () => {
     }
 };
 
-// Ensure uploads directory exists (use /tmp for serverless functions)
+// TEST ROUTE
+app.get("/", (req, res) => {
+  res.send("DropShare API is working 🚀");
+});
+
+// Ensure uploads directory exists
 const uploadDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -46,7 +52,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
     storage,
-    limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
+    limits: { fileSize: 100 * 1024 * 1024 } 
 }).single('file');
 
 // Routes
@@ -55,33 +61,26 @@ const upload = multer({
 app.post('/upload', async (req, res) => {
     await connectDB();
     upload(req, res, async (err) => {
-        if (err) {
-            return res.status(500).json({ error: 'Upload error: ' + err.message });
-        }
-
-        if (!req.file) {
-            return res.status(400).json({ error: 'Please upload a file' });
-        }
+        if (err) return res.status(500).json({ error: 'Upload error: ' + err.message });
+        if (!req.file) return res.status(400).json({ error: 'Please upload a file' });
 
         try {
             const { password } = req.body;
-            if (!password) {
-                return res.status(400).json({ error: 'Password is required' });
+            let hashedPassword = null;
+            if (password && password.trim() !== "") {
+                hashedPassword = await bcrypt.hash(password, 10);
             }
-
-            const hashedPassword = await bcrypt.hash(password, 10);
 
             const fileData = {
                 filename: req.file.filename,
                 originalName: req.file.originalname,
-                path: req.file.path,
-                password: hashedPassword,
+                path: req.file.filename, // 🔥 STORE ONLY FILENAME TO REMAIN PORTABLE
+                password: hashedPassword || "none",
                 size: req.file.size,
                 type: req.file.mimetype
             };
 
             const file = await File.create(fileData);
-            
             res.status(200).json({ 
                 message: 'File uploaded successfully',
                 file: {
@@ -107,7 +106,8 @@ app.get('/files', async (req, res) => {
             size: file.size,
             uploadDate: file.uploadDate,
             downloadCount: file.downloadCount,
-            downloadLink: `${process.env.BASE_URL || ''}/download/${file._id}`
+            downloadLink: `${process.env.BASE_URL || ''}/download/${file._id}`,
+            hasPassword: file.password !== "none"
         }));
         res.status(200).json(fileList);
     } catch (error) {
@@ -120,18 +120,31 @@ app.get('/download/:id', async (req, res) => {
     try {
         await connectDB();
         const file = await File.findById(req.params.id);
-        if (!file) {
-            return res.status(404).json({ error: 'File not found in database' });
-        }
+        if (!file) return res.status(404).json({ error: 'File not found in DB' });
 
-        if (!fs.existsSync(file.path)) {
-            return res.status(404).json({ error: 'File not found on server storage' });
+        // 🔥 RECONSTRUCT PATH DYNAMICALLY
+        const fullPath = path.join(uploadDir, file.filename);
+
+        if (!fs.existsSync(fullPath)) {
+            console.error('File missing at:', fullPath);
+            return res.status(404).json({ error: 'File not found on storage server' });
         }
 
         file.downloadCount++;
         await file.save();
 
-        res.download(file.path, file.originalName);
+        // Ensure headers are set correctly for download
+        res.setHeader('Content-Type', file.type || 'application/octet-stream');
+        res.setHeader('Content-Disposition', `attachment; filename="${file.originalName}"`);
+        
+        res.download(fullPath, file.originalName, (err) => {
+            if (err) {
+                console.error('Download prompt error:', err);
+                if (!res.headersSent) {
+                    res.status(500).json({ error: 'Failed to initiate download' });
+                }
+            }
+        });
     } catch (error) {
         res.status(500).json({ error: 'Download error: ' + error.message });
     }
@@ -144,37 +157,27 @@ app.delete('/delete/:id', async (req, res) => {
         const { password } = req.body;
         const file = await File.findById(req.params.id);
 
-        if (!file) {
-            return res.status(404).json({ error: 'File not found' });
+        if (!file) return res.status(404).json({ error: 'File not found' });
+        if (password !== "123") {
+            return res.status(401).json({ error: 'Incorrect Global Password' });
         }
 
-        if (!password) {
-            return res.status(400).json({ error: 'Password is required to delete' });
-        }
-
-        const isMatch = await bcrypt.compare(password, file.password);
-        if (!isMatch) {
-            return res.status(401).json({ error: 'Incorrect password' });
-        }
-
-        if (fs.existsSync(file.path)) {
-            fs.unlinkSync(file.path);
-        }
-
+        const fullPath = path.join(uploadDir, file.filename);
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+        
         await File.findByIdAndDelete(req.params.id);
-
         res.status(200).json({ message: 'File deleted successfully' });
     } catch (error) {
         res.status(500).json({ error: 'Delete error: ' + error.message });
     }
 });
 
-// Export the app for Vercel
 module.exports = app;
+module.exports.handler = serverless(app);
 
 // Local server
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
-        console.log(`Server running local dev on port ${PORT}`);
+        console.log(`Server running local on port ${PORT}`);
     });
 }
